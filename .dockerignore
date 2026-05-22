@@ -1,0 +1,7 @@
+**/bin/
+**/obj/
+.vs/
+aras.db
+aras-dev.db
+*.db-shm
+*.db-wal

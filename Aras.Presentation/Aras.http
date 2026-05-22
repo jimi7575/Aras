@@ -1,0 +1,42 @@
+@Aras_HostAddress = http://localhost:5147
+
+POST {{Aras_HostAddress}}/api/customers/sync
+Accept: application/json
+
+###
+
+GET {{Aras_HostAddress}}/api/customers
+Accept: application/json
+
+###
+
+POST {{Aras_HostAddress}}/api/orders/addorder
+Content-Type: application/json
+
+{
+  "customerId": 1,
+  "side": "Buy",
+  "amount": 100000,
+  "description": "Initial buy order"
+}
+
+###
+
+PUT {{Aras_HostAddress}}/api/orders/editorder/00000000-0000-0000-0000-000000000000
+Content-Type: application/json
+
+{
+  "side": "Sell",
+  "amount": 50000,
+  "description": "Edited pending order"
+}
+
+###
+
+GET {{Aras_HostAddress}}/api/orders
+Accept: application/json
+
+###
+
+GET {{Aras_HostAddress}}/api/wallets/1
+Accept: application/json
