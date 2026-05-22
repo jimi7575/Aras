@@ -42,27 +42,22 @@ public sealed class WalletJob(
         var signedAmount = order.Side == OrderSide.Buy ? -order.Amount : order.Amount;
         if (wallet.Balance + signedAmount < 0)
         {
-            order.Status = OrderStatus.Rejected;
-            order.UpdatedAtUtc = DateTime.UtcNow;
+            order.Reject();
 
             await unitOfWork.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             return;
         }
 
-        wallet.Balance += signedAmount;
-        wallet.UpdatedAtUtc = DateTime.UtcNow;
+        wallet.Apply(signedAmount);
 
-        order.Status = OrderStatus.Applied;
-        order.AppliedAtUtc = DateTime.UtcNow;
+        order.Apply();
 
-        wallets.AddTransaction(new WalletTransaction
-        {
-            WalletId = wallet.Id,
-            OrderId = order.Id,
-            Amount = Math.Abs(order.Amount),
-            Type = order.Side == OrderSide.Buy ? WalletTransactionType.Debit : WalletTransactionType.Credit
-        });
+        wallets.AddTransaction(new WalletTransaction(
+            wallet.Id,
+            order.Id,
+            Math.Abs(order.Amount),
+            order.Side == OrderSide.Buy ? WalletTransactionType.Debit : WalletTransactionType.Credit));
 
         try
         {

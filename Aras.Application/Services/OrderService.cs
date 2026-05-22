@@ -20,13 +20,11 @@ public sealed class OrderService(
 
         await EnsureSufficientBalanceAsync(request.CustomerId.Value, request.Side!.Value, request.Amount, cancellationToken);
 
-        var order = new Order
-        {
-            CustomerId = request.CustomerId!.Value,
-            Side = request.Side!.Value,
-            Amount = request.Amount,
-            Description = request.Description
-        };
+        var order = new Order(
+            request.CustomerId!.Value,
+            request.Side!.Value,
+            request.Amount,
+            request.Description);
 
         orders.Add(order);
         await unitOfWork.SaveChangesAsync(cancellationToken);
@@ -49,10 +47,7 @@ public sealed class OrderService(
 
         await EnsureSufficientBalanceAsync(order.CustomerId, request.Side!.Value, request.Amount, cancellationToken);
 
-        order.Side = request.Side!.Value;
-        order.Amount = request.Amount;
-        order.Description = request.Description;
-        order.UpdatedAtUtc = DateTime.UtcNow;
+        order.Update(request.Side!.Value, request.Amount, request.Description);
 
         await unitOfWork.SaveChangesAsync(cancellationToken);
         return order.ToResponse();
@@ -80,7 +75,7 @@ public sealed class OrderService(
             throw new KeyNotFoundException("Wallet was not found.");
         }
 
-        if (wallet.Balance < amount)
+        if (!wallet.HasSufficientBalance(amount))
         {
             throw new InvalidOperationException("Insufficient wallet balance. Sell something first.");
         }

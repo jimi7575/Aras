@@ -20,26 +20,21 @@ public sealed class CustomerImportService(
 
             if (customer is null)
             {
-                customer = new Customer
-                {
-                    NationalCode = item.NationalCode,
-                    FirstName = item.FirstName,
-                    LastName = item.LastName,
-                    Wallet = new Wallet()
-                };
+                customer = new Customer(item.NationalCode, item.FirstName, item.LastName);
 
                 customers.Add(customer);
                 imported++;
             }
 
-            customer.FirstName = item.FirstName;
-            customer.LastName = item.LastName;
-            customer.FatherName = item.FatherName;
-            customer.BirthCertificationNumber = item.BirthCertificationNumber;
-            customer.RegisterationNumber = item.RegisterationNumber;
-            customer.BirthDate = item.BirthDate;
-            customer.BranchName = item.BranchName;
-            customer.MobileNumber = item.MobileNumber;
+            customer.UpdateProfile(
+                item.FirstName,
+                item.LastName,
+                item.FatherName,
+                item.BirthCertificationNumber,
+                item.RegisterationNumber,
+                item.BirthDate,
+                item.BranchName,
+                item.MobileNumber);
         }
 
         await unitOfWork.SaveChangesAsync(cancellationToken);
