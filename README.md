@@ -1,8 +1,20 @@
 # Aras Interview Task
 
-یک Web API کوچک با .NET 8 که مشتریان را از API آماده ارس دریافت می‌کند، سفارش خرید/فروش ثبت می‌کند و با Hangfire کیف پول مشتریان را به شکل idempotent به‌روزرسانی می‌کند.
+A small .NET 8 Web API that imports customers from the Aras Trader interview API, stores them in SQLite, accepts buy/sell orders, and applies wallet updates through an idempotent Hangfire job.
 
-## اجرا
+## Tech Stack
+
+- .NET 8
+- ASP.NET Core Web API
+- EF Core with SQLite
+- Hangfire with SQLite storage
+- Redis for external API token cache
+- Docker / Docker Compose
+- Swagger and `.http` request samples
+
+## Run Locally
+
+Redis is required because the external API token is cached in Redis.
 
 ```bash
 dotnet restore
@@ -10,26 +22,45 @@ dotnet ef database update --project Aras.Infrastructure/Aras.Infrastructure.cspr
 dotnet run --project Aras.Presentation/Aras.Presentation.csproj
 ```
 
-Swagger بعد از اجرا در این آدرس در دسترس است:
+Swagger:
 
 ```text
 http://localhost:5147/swagger
 ```
 
-داشبورد Hangfire:
+Hangfire dashboard:
 
 ```text
 http://localhost:5147/hangfire
 ```
 
-## تنظیمات
+## Run With Docker Compose
 
-تنظیمات پیش‌فرض در `Aras.Presentation/appsettings.json` قرار دارد:
+```bash
+docker compose up --build
+```
+
+Swagger:
+
+```text
+http://localhost:8080/swagger
+```
+
+Hangfire dashboard:
+
+```text
+http://localhost:8080/hangfire
+```
+
+## Configuration
+
+Default settings are in `Aras.Presentation/appsettings.json`.
 
 ```json
 {
   "ConnectionStrings": {
-    "Default": "Data Source=aras.db"
+    "Default": "Data Source=aras.db;",
+    "Redis": "redis:6379"
   },
   "ArasTrader": {
     "BaseUrl": "https://interview.arasetrader.ir/",
@@ -39,30 +70,20 @@ http://localhost:5147/hangfire
 }
 ```
 
-برای Docker یا محیط عملیاتی می‌توانید این مقادیر را با environment variable جایگزین کنید:
+Development uses `Aras.Presentation/appsettings.Development.json`, where Redis points to `localhost:6379`.
+
+Environment variable examples:
 
 ```bash
 ArasTrader__Username=user2
 ArasTrader__Password=P@ssUs#r2
-ConnectionStrings__Default="Data Source=/data/aras.db"
+ConnectionStrings__Default="Data Source=/data/aras.db;"
+ConnectionStrings__Redis="redis:6379"
 ```
 
-## Docker
+## Main APIs
 
-```bash
-docker build -t aras-task .
-docker run --rm -p 8080:8080 aras-task
-```
-
-Swagger داخل کانتینر:
-
-```text
-http://localhost:8080/swagger
-```
-
-## APIهای اصلی
-
-نمونه درخواست‌ها در `Aras.Presentation/Aras.http` قرار دارد.
+Sample requests are available in `Aras.Presentation/Aras.http`.
 
 ```http
 POST /api/customers/sync
@@ -73,32 +94,74 @@ GET /api/orders
 GET /api/wallets/{customerId}
 ```
 
-برای نوع سفارش از مقدارهای `Buy` و `Sell` استفاده کنید.
+Order side values:
 
-## طراحی
+```text
+Buy
+Sell
+```
 
-موجودیت‌ها:
+## Database
 
-- `Customer`: اطلاعات مشتری دریافت‌شده از API بیرونی، با `NationalCode` یکتا.
-- `Wallet`: کیف پول یک‌به‌یک برای هر مشتری، شامل `Balance`.
-- `Order`: سفارش مشتری با وضعیت‌های `Pending`، `Applied` و `Rejected`.
-- `WalletTransaction`: اثر مالی سفارش روی کیف پول، با `OrderId` یکتا.
+The database schema is managed by EF Core migrations in `Aras.Infrastructure/Migrations`.
 
-## توکن و API بیرونی
+SQLite files are local runtime artifacts and are ignored by git:
 
-`ArasTraderClient` توکن را در حافظه cache می‌کند. اگر توکن معتبر موجود باشد از همان استفاده می‌شود؛ اگر توکن قبلی موجود باشد refresh انجام می‌شود؛ و اگر refresh به علت انقضا ناموفق شود، token جدید با username/password گرفته می‌شود. برای خطاهای موقت HTTP هم retry کوتاه در نظر گرفته شده است.
+```text
+Aras.Presentation/aras-dev.db
+Aras.Presentation/aras.db
+```
 
-## همزمانی و Idempotency
+## External API Token Strategy
 
-ثبت و ویرایش سفارش فقط روی سفارش‌های `Pending` انجام می‌شود. Job کیف پول سفارش‌های `Pending` را داخل transaction اعمال می‌کند و برای هر سفارش دقیقا یک `WalletTransaction` با `OrderId` یکتا می‌سازد. بنابراین اگر Job چند بار اجرا شود یا دو worker همزمان به یک سفارش برسند، constraint یکتا و بررسی وضعیت سفارش مانع دوباره اعمال شدن مبلغ می‌شود.
+`ArasTraderClient` manages the external API token flow:
 
-در SQLite نوشتن‌ها در سطح دیتابیس serialize می‌شوند. برای مهاجرت به PostgreSQL همین مدل با transaction و unique constraint حفظ می‌شود و می‌توان روی row version یا lock سطح ردیف نیز تکیه کرد.
+- If there is no cached token, it calls `POST /api/auth/token`.
+- If a cached token exists and is near expiry, it calls `POST /api/auth/refresh`.
+- The token is cached in Redis until its real expiry time.
+- The client refreshes before expiry to reduce auth calls and avoid rate limits.
+- Short retry handling is included for temporary HTTP failures.
 
-## معماری
+If another client, such as Postman, creates an active token for the same user and this service does not have that token in Redis, the external API may return `409 active_token_exists`. In that case the service cannot refresh because the refresh endpoint requires the previous JWT.
 
-ساختار پروژه بر اساس Clean Architecture چهارلایه است:
+## Domain Design
 
-- `Aras.Domain`: موجودیت‌ها و enumهای دامنه، بدون وابستگی به لایه‌های دیگر.
-- `Aras.Application`: DTOها، قراردادهای repository/unit-of-work/external client، Gateway و use caseها.
-- `Aras.Infrastructure`: EF Core، migrationها، repositoryها، UnitOfWork، Hangfire storage و client API ارس.
-- `Aras.Presentation`: Web API، controllerها، Swagger، Hangfire dashboard و composition root.
+- `Customer`: imported from the external API and uniquely identified by `NationalCode`.
+- `Wallet`: one-to-one with a customer and stores the current `Balance`.
+- `Order`: buy/sell request with `Pending`, `Applied`, or `Rejected` status.
+- `WalletTransaction`: immutable financial effect of an applied order. `OrderId` is unique for idempotency.
+
+Domain entities use private setters and behavior methods such as `Order.Apply`, `Order.Reject`, and `Wallet.HasSufficientBalance` so state changes stay explicit.
+
+## Gateway
+
+`OrderGateway` is the application entry point for order registration. It delegates validation and persistence to `OrderService`, then enqueues the Hangfire wallet job after a new order is accepted. This keeps HTTP controllers thin and leaves room for future orchestration such as audit logging or event publishing.
+
+## Hangfire Job And Idempotency
+
+`WalletJob` periodically picks pending orders and applies them to wallets.
+
+Idempotency is handled by:
+
+- Processing only `Pending` orders.
+- Rejecting insufficient-balance buy orders.
+- Creating exactly one `WalletTransaction` per order.
+- Enforcing a unique index on `WalletTransaction.OrderId`.
+
+Running the job multiple times does not apply the same order twice.
+
+## Race Condition Strategy
+
+SQLite does not support row-level `SELECT FOR UPDATE` locking like PostgreSQL. To keep wallet updates safe, wallet balance updates are performed atomically in the database:
+
+```sql
+UPDATE Wallets
+SET Balance = Balance + @signedAmount,
+    UpdatedAtUtc = @now
+WHERE Id = @walletId
+  AND Balance + @signedAmount >= 0
+```
+
+If the update affects zero rows, the order is rejected. This prevents concurrent buy orders from driving a wallet balance below zero.
+
+For a future PostgreSQL version, the repository boundary is the right place to switch to row-level locks such as `FOR UPDATE SKIP LOCKED`.

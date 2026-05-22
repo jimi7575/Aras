@@ -25,7 +25,6 @@ public sealed class Order
     public DateTime? UpdatedAtUtc { get; private set; }
     public DateTime? AppliedAtUtc { get; private set; }
     public WalletTransaction? WalletTransaction { get; private set; }
-    public byte[] RowVersion { get; private set; } = [];
 
     public void Update(OrderSide side, decimal amount, string? description)
     {

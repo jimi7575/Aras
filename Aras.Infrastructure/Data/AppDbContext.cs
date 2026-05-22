@@ -32,7 +32,6 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             entity.HasKey(x => x.Id);
             entity.HasIndex(x => x.CustomerId).IsUnique();
             entity.Property(x => x.Balance).HasPrecision(18, 2);
-            entity.Property(x => x.RowVersion).IsConcurrencyToken();
         });
 
         modelBuilder.Entity<Order>(entity =>
@@ -41,7 +40,6 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             entity.HasIndex(x => new { x.Status, x.CreatedAtUtc });
             entity.Property(x => x.Amount).HasPrecision(18, 2);
             entity.Property(x => x.Description).HasMaxLength(500);
-            entity.Property(x => x.RowVersion).IsConcurrencyToken();
             entity.HasOne(x => x.Customer).WithMany(x => x.Orders).HasForeignKey(x => x.CustomerId);
         });
 

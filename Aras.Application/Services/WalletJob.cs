@@ -40,7 +40,8 @@ public sealed class WalletJob(
         }
 
         var signedAmount = order.Side == OrderSide.Buy ? -order.Amount : order.Amount;
-        if (wallet.Balance + signedAmount < 0)
+        var walletUpdated = await wallets.TryApplyBalanceAsync(wallet.Id, signedAmount, cancellationToken);
+        if (!walletUpdated)
         {
             order.Reject();
 
@@ -48,8 +49,6 @@ public sealed class WalletJob(
             await transaction.CommitAsync(cancellationToken);
             return;
         }
-
-        wallet.Apply(signedAmount);
 
         order.Apply();
 

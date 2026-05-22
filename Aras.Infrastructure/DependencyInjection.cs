@@ -1,7 +1,9 @@
 using Aras.Application.Abstractions;
 using Aras.External;
 using Aras.Infrastructure.Data;
+using Aras.Infrastructure.Jobs;
 using Aras.Options;
+using Aras.Services;
 using Hangfire;
 using Hangfire.SQLite;
 using Microsoft.EntityFrameworkCore;
@@ -28,6 +30,7 @@ public static class DependencyInjection
         services.AddScoped<IOrderRepository, OrderRepository>();
         services.AddScoped<IWalletRepository, WalletRepository>();
         services.AddScoped<IUnitOfWork, UnitOfWork>();
+        services.AddScoped<IWalletJobScheduler, HangfireWalletJobScheduler>();
         services.AddHttpClient<IArasTraderClient, ArasTraderClient>((serviceProvider, client) =>
         {
             var options = serviceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<ArasTraderOptions>>().Value;

@@ -11,6 +11,18 @@ public sealed class WalletRepository(AppDbContext db) : IWalletRepository
         return db.Wallets.FirstOrDefaultAsync(x => x.CustomerId == customerId, cancellationToken);
     }
 
+    public async Task<bool> TryApplyBalanceAsync(int walletId, decimal signedAmount, CancellationToken cancellationToken)
+    {
+        var updatedRows = await db.Wallets
+            .Where(x => x.Id == walletId && x.Balance + signedAmount >= 0)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(x => x.Balance, x => x.Balance + signedAmount)
+                .SetProperty(x => x.UpdatedAtUtc, DateTime.UtcNow),
+                cancellationToken);
+
+        return updatedRows == 1;
+    }
+
     public void AddTransaction(WalletTransaction transaction)
     {
         db.WalletTransactions.Add(transaction);

@@ -1,0 +1,18 @@
+services:
+  api:
+    build: .
+    image: aras-task
+    ports:
+      - "8080:8080"
+    volumes:
+      - aras-data:/data
+    depends_on:
+      - redis
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+volumes:
+  aras-data:

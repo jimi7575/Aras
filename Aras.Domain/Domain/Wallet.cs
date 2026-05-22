@@ -7,17 +7,10 @@ public sealed class Wallet
     public Customer Customer { get; private set; } = null!;
     public decimal Balance { get; private set; }
     public DateTime UpdatedAtUtc { get; private set; } = DateTime.UtcNow;
-    public byte[] RowVersion { get; private set; } = [];
     public List<WalletTransaction> Transactions { get; private set; } = [];
 
     public bool HasSufficientBalance(decimal amount)
     {
         return Balance >= amount;
-    }
-
-    public void Apply(decimal signedAmount)
-    {
-        Balance += signedAmount;
-        UpdatedAtUtc = DateTime.UtcNow;
     }
 }

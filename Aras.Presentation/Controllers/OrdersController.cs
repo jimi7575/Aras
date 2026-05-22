@@ -1,13 +1,12 @@
 using Aras.Contracts;
 using Aras.Services;
-using Hangfire;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Aras.Controllers;
 
 [ApiController]
 [Route("api/orders")]
-public sealed class OrdersController(IOrderGateway gateway, IOrderService orderService, IBackgroundJobClient jobs) : ControllerBase
+public sealed class OrdersController(IOrderGateway gateway, IOrderService orderService) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<OrderResponse>>> Get(CancellationToken cancellationToken)
@@ -19,7 +18,6 @@ public sealed class OrdersController(IOrderGateway gateway, IOrderService orderS
     public async Task<ActionResult<OrderResponse>> AddOrder(OrderCreateRequest request, CancellationToken cancellationToken)
     {
         var order = await gateway.AddOrderAsync(request, cancellationToken);
-        jobs.Enqueue<IWalletJob>(job => job.ApplyPendingOrdersAsync(CancellationToken.None));
         return CreatedAtAction(nameof(Get), new { id = order.Id }, order);
     }
 

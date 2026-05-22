@@ -18,6 +18,7 @@ public sealed class ArasTraderClient(
     private const string TokenCacheKey = "aras-trader:access-token";
     private readonly SemaphoreSlim _tokenLock = new(1, 1);
     private string? _cachedToken;
+    private DateTimeOffset _refreshAfterUtc;
     private DateTimeOffset _expiresAtUtc;
 
     public async Task<IReadOnlyList<ArasTraderCustomerDto>> GetCustomersAsync(CancellationToken cancellationToken)
@@ -38,7 +39,7 @@ public sealed class ArasTraderClient(
 
     private async Task<string> GetAccessTokenAsync(CancellationToken cancellationToken)
     {
-        if (HasUsableToken())
+        if (HasUsableToken() && !ShouldRefreshToken())
         {
             return _cachedToken!;
         }
@@ -48,24 +49,23 @@ public sealed class ArasTraderClient(
         {
             if (HasUsableToken())
             {
-                return _cachedToken!;
+                return await RefreshOrUseCachedTokenAsync(cancellationToken);
             }
 
             await LoadTokenFromCacheAsync(cancellationToken);
             if (HasUsableToken())
             {
-                return _cachedToken!;
+                return await RefreshOrUseCachedTokenAsync(cancellationToken);
             }
 
             var token = _cachedToken is null
                 ? await RequestTokenAsync(cancellationToken)
                 : await RefreshTokenAsync(_cachedToken, cancellationToken) ?? await RequestTokenAsync(cancellationToken);
 
-            _cachedToken = token.Token;
-            _expiresAtUtc = DateTimeOffset.UtcNow.AddSeconds(token.ExpiresIn ?? 3600).AddMinutes(-2);
+            SetToken(token);
             await SaveTokenToCacheAsync(cancellationToken);
 
-            return _cachedToken;
+            return _cachedToken!;
         }
         finally
         {
@@ -76,6 +76,41 @@ public sealed class ArasTraderClient(
     private bool HasUsableToken()
     {
         return !string.IsNullOrWhiteSpace(_cachedToken) && _expiresAtUtc > DateTimeOffset.UtcNow;
+    }
+
+    private bool ShouldRefreshToken()
+    {
+        return _refreshAfterUtc <= DateTimeOffset.UtcNow;
+    }
+
+    private async Task<string> RefreshOrUseCachedTokenAsync(CancellationToken cancellationToken)
+    {
+        if (!ShouldRefreshToken())
+        {
+            return _cachedToken!;
+        }
+
+        var token = await RefreshTokenAsync(_cachedToken!, cancellationToken);
+        if (token is not null)
+        {
+            SetToken(token);
+            await SaveTokenToCacheAsync(cancellationToken);
+        }
+
+        return _cachedToken!;
+    }
+
+    private void SetToken(TokenResult token)
+    {
+        var now = DateTimeOffset.UtcNow;
+        _cachedToken = token.Token;
+        _expiresAtUtc = now.AddSeconds(token.ExpiresIn ?? 3600);
+        _refreshAfterUtc = _expiresAtUtc.AddMinutes(-2);
+
+        if (_refreshAfterUtc <= now)
+        {
+            _refreshAfterUtc = now;
+        }
     }
 
     private async Task LoadTokenFromCacheAsync(CancellationToken cancellationToken)
@@ -90,6 +125,7 @@ public sealed class ArasTraderClient(
 
             var tokenCache = JsonSerializer.Deserialize<TokenCache>(json);
             _cachedToken = tokenCache?.Token;
+            _refreshAfterUtc = tokenCache?.RefreshAfterUtc ?? default;
             _expiresAtUtc = tokenCache?.ExpiresAtUtc ?? default;
         }
         catch (Exception ex)
@@ -100,7 +136,7 @@ public sealed class ArasTraderClient(
 
     private async Task SaveTokenToCacheAsync(CancellationToken cancellationToken)
     {
-        var tokenCache = new TokenCache(_cachedToken!, _expiresAtUtc);
+        var tokenCache = new TokenCache(_cachedToken!, _refreshAfterUtc, _expiresAtUtc);
         var ttl = _expiresAtUtc - DateTimeOffset.UtcNow;
         if (ttl <= TimeSpan.Zero)
         {
@@ -185,5 +221,5 @@ public sealed class ArasTraderClient(
 
     private sealed record TokenResult(string Token, int? ExpiresIn);
 
-    private sealed record TokenCache(string Token, DateTimeOffset ExpiresAtUtc);
+    private sealed record TokenCache(string Token, DateTimeOffset RefreshAfterUtc, DateTimeOffset ExpiresAtUtc);
 }
